@@ -1,3 +1,5 @@
+# pip install pygame numpy torch
+
 import pygame as pg
 import numpy as np
 
@@ -328,7 +330,6 @@ class cTetris:
         self.stopwatchturn+=dis.deltatime
         self.stopwatchkeys+=dis.deltatime
 
-
         # move the block one down after some time
         if(self.stopwatchturn>=tet.turntime):
             self.stopwatchturn=0.0
@@ -339,30 +340,33 @@ class cTetris:
             self.lastplayerkey=0
             self.stopwatchkeys=0.0
             keys=pg.key.get_pressed()
-            if keys[pg.K_LEFT] or keys[pg.K_a] or self.simulatedkey==1:
+            if keys[pg.K_LEFT] or keys[pg.K_a]:
                 self.move(-1,0)
-                # maybe set lastplayerkey
-                if(keys[pg.K_LEFT] or keys[pg.K_a]) and self.simulatedkey!=1:
-                    self.lastplayerkey=1
-            if keys[pg.K_RIGHT] or keys[pg.K_d] or self.simulatedkey==2:
+                self.lastplayerkey=1
+            if keys[pg.K_RIGHT] or keys[pg.K_d]:
                 self.move(1,0)
-                # maybe set lastplayerkey
-                if(keys[pg.K_RIGHT] or keys[pg.K_d]) and self.simulatedkey!=2:
-                    self.lastplayerkey=2
-            if keys[pg.K_DOWN] or keys[pg.K_s] or self.simulatedkey==4:
+                self.lastplayerkey=2
+            if keys[pg.K_DOWN] or keys[pg.K_s]:
                 self.move(0,1)
-                # maybe set lastplayerkey
-                if(keys[pg.K_DOWN] or keys[pg.K_s]) and self.simulatedkey!=4:
-                    self.lastplayerkey=4
-            if ((keys[pg.K_UP] or keys[pg.K_w]) and not self.upkeydown) or self.simulatedkey==3:
+                self.lastplayerkey=4
+            if ((keys[pg.K_UP] or keys[pg.K_w]) and not self.upkeydown):
                 self.rotate()
                 self.upkeydown = True
-                # maybe set lastplayerkey
-                if(keys[pg.K_UP] or keys[pg.K_w]) and self.simulatedkey!=3:
-                    self.lastplayerkey=3
+                self.lastplayerkey=3
             # reset the up key blocker        
             if not keys[pg.K_UP] and not keys[pg.K_w]:
                 self.upkeydown = False
+            
+            # if no key was pressed, check for simulatedkey
+            if self.lastplayerkey==0:
+                if self.simulatedkey==1:
+                    self.move(-1,0)
+                if self.simulatedkey==2:
+                    self.move(1,0)
+                if self.simulatedkey==3:
+                    self.rotate()
+                if self.simulatedkey==4:
+                    self.move(0,1)           
             self.simulatedkey = 0
 
         # check for gameover and stop the game
@@ -448,22 +452,45 @@ class cTetrAI:
     score = 0
     previousscore = 0
     deltascore = 0
+    previouslinecount=0
+
+    # it trains once with all the samples collected in one second
+    stopwatchsamplecollector =0.0
+    mode=0 # 0 Off 1 Play 2 Train
+    samplecount = 0
+    samplecounter=0
+
+    spacepressed = False
 
     def reset(self):
         self.score = 0
         self.previousscore = 0
         self.deltascore = 0
+        self.previouslinecount=0
 
     # process the AI stuff here
     def processAI(self, renderedfield, lines, points, gameover, lastplayerkey, nextblockmatrix, actualblockmatrix):
+        nextsimulatedkey=0
+
+        # check if train, play or predicting
+        keys=pg.key.get_pressed()
+        if keys[pg.K_SPACE] and self.spacepressed==False:
+            self.mode+=1
+            if self.mode>2:
+                self.mode=0
+            self.spacepressed=True
+
+        if not keys[pg.K_SPACE]:
+            self.spacepressed=False
+
         # maybe the score for the AI weights is computed otherwise - idk
-        sc = self.score
+#        sc = self.score
         # deltascore is score - record, so if it is 0, this is good. It will be < 0 elsewhere.
-        self.score, self.deltascore = self.countscore(renderedfield,lines,points,gameover,lastplayerkey)
+#        self.score, self.deltascore = self.countscore(renderedfield,lines,points,gameover,lastplayerkey)
 
         # maybe set previous score
-        if self.score!=sc:
-            self.previousscore=sc
+#        if self.score!=sc:
+#            self.previousscore=sc
         # based on score, rf, lines, points, and gameover, and maybe lastplayerkey for learning; 
         #   compute the next key to press.
 
@@ -472,20 +499,51 @@ class cTetrAI:
         # So the AI can learn from a human beeing, maybe.
         # but it gets punished a little for using human help (in the countscore function) ;)
         
-        ###########################
-        #    ,-------------__     #
-        #   {_   ___   ____--  *  #
-        #    /  /,_|   |/         #
-        #   /__/   |   |          #
-        #           | |           #
-        #           | |           #
-        #           |_|           # 
-        ####### COMPUTE HERE ######
-        
-        nextsimulatedkey = 0 # 1 left 2 right 3 rotate 4 speed up
+        #if(lastplayerkey!=0 ):
+        #    self.training = True
 
+        if self.mode==2:
+            self.stopwatchsamplecollector+=dis.deltatime
+            #if lastplayerkey!=0 or lines>self.previouslinecount:
+            self.samplecounter+=1
+                # collect samples for one second
+                ###########################
+                #    ,-------------__     #
+                #   {_   ___   ____--  *  #
+                #    /  /,_|   |/         #
+                #   /__/   |   |          #
+                #           | |           #
+                #           | |           #
+                #           |_|           # 
+                ####### COLLECT HERE ######
+            if lines>self.previouslinecount:
+                print("line count @ sample #"+format(self.samplecount))
+            
+            if self.stopwatchsamplecollector>=1.0:
+                #self.training = False
+                self.stopwatchsamplecollector=0.0
+                # train with the samples from one second
+                ###########################
+                #    ,-------------__     #
+                #   {_   ___   ____--  *  #
+                #    /  /,_|   |/         #
+                #   /__/   |   |          #
+                #           | |           #
+                #           | |           #
+                #           |_|           # 
+                ######## TRAIN HERE #######
+                self.samplecount=self.samplecounter
+                print("######## AI TRAINING #########")
+                print("> Samples: "+format(self.samplecount))
+                self.samplecounter=0
+
+        elif self.mode==1: # if it is not training, it is playing
+            nextsimulatedkey = np.random.randint(0,5) # 1 left 2 right 3 rotate 4 speed up
+        else: # mode 0 = leave the player playing
+            pass
         ########### ENDOF COMPUTE ##############
 
+        self.previouslinecount=lines
         # return the computed key so tetris can process the "input"
         return nextsimulatedkey
     
@@ -599,19 +657,19 @@ while True:
     # show the AI values on the screen
     dis.txt("AI Values:",False, 295, 290)
 
-    text= "Score:   "+format(ai.score)
-    dis.txt(text,False, 320, 305)
+    #text= "Score:   "+format(ai.score)
+    #dis.txt(text,False, 320, 305)
 
-    text = "> prev.: "+format(ai.previousscore)
-    dis.txt(text, False,320,320)
+    #text = "> prev.: "+format(ai.previousscore)
+    #dis.txt(text, False,320,320)
 
-    text = "> delta: "+format(ai.deltascore)
-    dis.txt(text, False, 320, 335)
+    #text = "> delta: "+format(ai.deltascore)
+    #dis.txt(text, False, 320, 335)
 
-    text = "Record:  "+format(ai.recordscore)
-    dis.txt(text, False,320,350)
+    #text = "Record:  "+format(ai.recordscore)
+    #dis.txt(text, False,320,350)
 
-    # show the key which the AI wishes to press
+# show the key which the AI wishes to press
     text = "Press Key: "
     if tet.simulatedkey==0:
         text+="None"
@@ -623,7 +681,20 @@ while True:
         text+="Rotate"
     elif tet.simulatedkey==4:
         text+="Speed Up"
-    dis.txt(text,False,320,365)
+    dis.txt(text,False,320,305)
+
+# show ai mode
+    text = "Mode: "
+    if ai.mode==2:
+        text+="TRAIN"
+    elif ai.mode==1:
+        text+="PLAY"
+    else:
+        text+="Off"
+    dis.txt(text, False, 320,320)
+
+    text="Samples: "+format(ai.samplecount)
+    dis.txt(text,False,320,335)
 
     text="FPS: "+format(dis.fps)
     dis.txt(text,False, 320, 390)

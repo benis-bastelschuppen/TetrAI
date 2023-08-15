@@ -1,7 +1,12 @@
-# pip install pygame numpy torch
+# pip install pygame numpy torch torchvision
 
 import pygame as pg
 import numpy as np
+
+import torch
+from torch.utils.data import Dataset
+from torchvision import datasets
+from torchvision.transforms import ToTensor
 
 ####### DISPLAY CLASS : be careful with the init #######################################################
 class cDisplay:
@@ -113,6 +118,9 @@ class cTetris:
 
     # last key pressed by the player, as data for the AI
     lastplayerkey=0
+
+    # only collect samples when something changed.
+    somethingchanged=0
 
     # constrain the up key to be pressed just once when key is down.
     upkeydown = False
@@ -298,6 +306,7 @@ class cTetris:
         mat=np.rot90(self.actualBlockMat)
         if self.__checkForValidMove(mat,self.actualBlockX,self.actualBlockY):
             self.actualBlockMat=mat
+            self.somethingchanged=1
 
     # move the block
     laydown = False
@@ -306,6 +315,7 @@ class cTetris:
             self.actualBlockX+=x
             self.actualBlockY+=y
             self.laydown = False
+            self.somethingchanged=1
         else:
             # dont lay down sidewards
             if(x != 0):
@@ -320,6 +330,7 @@ class cTetris:
                     self.__clearLines()
                 else:
                     self.laydown=True
+                self.somethingchanged=1
             #print("STOP @",self.actualBlockX, self.actualBlockY)
 
     # update the game, get key input, check stop watches, etc.
@@ -327,13 +338,15 @@ class cTetris:
         if self.gameover==True:
             return
         
+        self.somethingchanged=0
+
         self.stopwatchturn+=dis.deltatime
         self.stopwatchkeys+=dis.deltatime
 
         # move the block one down after some time
         if(self.stopwatchturn>=tet.turntime):
             self.stopwatchturn=0.0
-            tet.move(0,1)
+            self.move(0,1)
 
         # constrain key presses to 1 each 100ms
         if(self.stopwatchkeys>self.keytime):
@@ -444,35 +457,66 @@ class cTetris:
 
 ############# END OF TETRIS CLASS #####################################################################################################
 
-############# AI CLASS ################################################################################################################
+############# AI CLASSES ##############################################################################################################
 
+# The AI Dataset class contains the data for one sample.
+class cAIDataset(Dataset):
+    def __init__(self, playfields, keys, transform=None, target_transform=None):
+        self.playfields = playfields
+        self.keys = keys
+        self.transform = transform
+        self.target_transform = target_transform
+
+    def __len__(self):
+        return len(self.keys)
+    
+    def __getitem__(self, idx):
+        playfield = self.playfields[idx]
+        key = self.keys[idx]
+        if self.transform:
+            playfield=self.transform(playfield)
+        if self.target_transform:
+            key = self.target_transform(key)
+        return playfield, key
+    
+
+#**************************************************************************************************************************************
+
+# The AI class processes all the input from Tetris and gives a key-to-press as output,
+# or is in learn mode. Or is Off.
 class cTetrAI:
-    scoreinitvalue = 20 # two lines for free
-    recordscore = -100
-    score = 0
-    previousscore = 0
-    deltascore = 0
-    previouslinecount=0
+    # old values
+    #scoreinitvalue = 20 # two lines for free
+    #recordscore = -100
+    #score = 0
+    #previousscore = 0
+    #deltascore = 0
+    #previouslinecount=0
 
     # it trains once with all the samples collected in one second
-    stopwatchsamplecollector =0.0
     mode=0 # 0 Off 1 Play 2 Train
-    samplecount = 0
     samplecounter=0
+
+    # collect samples in this arrays
+    sample_array_size=100
+    sampleplayfields=[]
+    samplekeys=[]
 
     spacepressed = False
 
     def reset(self):
-        self.score = 0
-        self.previousscore = 0
-        self.deltascore = 0
-        self.previouslinecount=0
+        self.samplekeys=[]
+        self.sampleplayfields=[]
+ #       self.score = 0
+ #       self.previousscore = 0
+ #       self.deltascore = 0
+ #       self.previouslinecount=0
 
     # process the AI stuff here
-    def processAI(self, renderedfield, lines, points, gameover, lastplayerkey, nextblockmatrix, actualblockmatrix):
+    def processAI(self, somethingchanged, renderedfield, lines, points, gameover, lastplayerkey, nextblockmatrix, actualblockmatrix):
         nextsimulatedkey=0
 
-        # check if train, play or predicting
+        # check if train, player play or predicting
         keys=pg.key.get_pressed()
         if keys[pg.K_SPACE] and self.spacepressed==False:
             self.mode+=1
@@ -499,14 +543,13 @@ class cTetrAI:
         # So the AI can learn from a human beeing, maybe.
         # but it gets punished a little for using human help (in the countscore function) ;)
         
-        #if(lastplayerkey!=0 ):
-        #    self.training = True
-
+        # mode 2 is training mode
         if self.mode==2:
-            self.stopwatchsamplecollector+=dis.deltatime
-            #if lastplayerkey!=0 or lines>self.previouslinecount:
-            self.samplecounter+=1
-                # collect samples for one second
+            if somethingchanged:
+                if self.samplecounter==0:
+                    print("######## COLLECTING SAMPLES ########")
+                self.samplecounter+=1
+                # collect samples until limit is reached
                 ###########################
                 #    ,-------------__     #
                 #   {_   ___   ____--  *  #
@@ -516,13 +559,14 @@ class cTetrAI:
                 #           | |           #
                 #           |_|           # 
                 ####### COLLECT HERE ######
-            if lines>self.previouslinecount:
-                print("line count @ sample #"+format(self.samplecount))
+                self.sampleplayfields.append(renderedfield)
+                self.samplekeys.append(lastplayerkey)
+                if lines>self.previouslinecount:
+                    print("line/s scored @ sample #"+format(self.samplecounter))
             
-            if self.stopwatchsamplecollector>=1.0:
-                #self.training = False
-                self.stopwatchsamplecollector=0.0
-                # train with the samples from one second
+            # train with the above collected samples after 1 second
+            if len(self.samplekeys)>=self.sample_array_size:
+                # train with the samples from above
                 ###########################
                 #    ,-------------__     #
                 #   {_   ___   ____--  *  #
@@ -532,9 +576,13 @@ class cTetrAI:
                 #           | |           #
                 #           |_|           # 
                 ######## TRAIN HERE #######
-                self.samplecount=self.samplecounter
+
+                # create a dataset.
+                ds = cAIDataset(self.sampleplayfields,self.samplekeys)
+
                 print("######## AI TRAINING #########")
-                print("> Samples: "+format(self.samplecount))
+                print("> Samples: "+format(ds.__len__()))
+                self.reset()
                 self.samplecounter=0
 
         elif self.mode==1: # if it is not training, it is playing
@@ -597,7 +645,7 @@ while True:
     rf = tet.renderfield()
 
     # calculate the AI reaction for this turn.
-    # where a turn is one frame and the must not move, but it can. 
+    # where a turn is one change of the playfield
     # Also, keypress is available all 100ms, not every frame.
     # The AI can "see" everything the player sees:
     # --> the playfield with the actual block in it (rf)
@@ -609,7 +657,7 @@ while True:
     # this method should return the next key to press. 1 left 2 right 3 rotate 4 speed up
 
     # process AI turn or whatever and push the simulated key to tetris
-    tet.simulatedkey=ai.processAI(rf, tet.linecount,tet.points, tet.gameover, tet.lastplayerkey,tet.nextBlockMat,tet.actualBlockMat)
+    tet.simulatedkey=ai.processAI(tet.somethingchanged,rf, tet.linecount,tet.points, tet.gameover, tet.lastplayerkey,tet.nextBlockMat,tet.actualBlockMat)
 
     ####################### 
     # build up the screen #
@@ -693,11 +741,14 @@ while True:
         text+="Off"
     dis.txt(text, False, 320,320)
 
-    text="Samples: "+format(ai.samplecount)
+    text="Sample #"+format(ai.samplecounter)+"/"+format(ai.sample_array_size)
     dis.txt(text,False,320,335)
 
     text="FPS: "+format(dis.fps)
     dis.txt(text,False, 320, 390)
+
+    text= "Arrow Keys,A,S,D,W,Space"
+    dis.txt(text, False, 295,470)
 
     #dis.txt("1 left 2 right 3 rotate 4 down",False,320,350)
     # end the drawing

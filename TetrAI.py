@@ -4,14 +4,25 @@ import pygame as pg
 import numpy as np
 
 import torch
+from torch import nn
 from torch.utils.data import Dataset
-from torchvision import datasets
-from torchvision.transforms import ToTensor
+from torch.utils.data import DataLoader
+
+#from torchvision import datasets
+#from torchvision.transforms import ToTensor
 
 ####### DISPLAY CLASS : be careful with the init #######################################################
 class cDisplay:
     background_color=(0,0,33)
-    font_color=(33,150,33)
+    font_color=[(33,150,33), # default color 0
+                (33,33,255), # color 1 blue
+                (255,33,33), # color 2 red
+                (33,255,33), # color 3 green
+                (255,150,33), # color 4 orange
+                (250,33,255), # color 5 purple
+                (255,255,0), # color 6 yellow
+                (33,255,255) # color 7 turkis
+                ]
     font_size=23
     
     screenx=500
@@ -72,10 +83,11 @@ class cDisplay:
                 quit()
 
     # draw a textline on posx, posy
-    def txt(self, textline, isbigFont=True,posx=0, posy=0):
-        renderfont=self.font2.render(textline,True,self.font_color)
+    # with font color from 0 to 7 see above
+    def txt(self, textline, isbigFont=True,posx=0, posy=0, fontcolor=0):
+        renderfont=self.font2.render(textline,True,self.font_color[fontcolor])
         if isbigFont:
-            renderfont=self.font.render(textline,True,self.font_color)
+            renderfont=self.font.render(textline,True,self.font_color[fontcolor])
         #textrect=renderfont.get_rect()
         textrect = (posx, posy)
         self.screen.blit(renderfont, textrect)
@@ -134,27 +146,27 @@ class cTetris:
                        [0,0,0,0],
                        [0,0,0,0]])
 
-    blockJ = np.array([[1,0,0],
-                       [1,1,1],
+    blockJ = np.array([[2,0,0],
+                       [2,2,2],
                        [0,0,0]])
 
-    blockL = np.array([[0,0,1],
-                       [1,1,1],
+    blockL = np.array([[0,0,3],
+                       [3,3,3],
                        [0,0,0]])
 
-    blockO = np.array([[1,1],
-                       [1,1]])
+    blockO = np.array([[4,4],
+                       [4,4]])
 
-    blockS = np.array([[0,1,1],
-                       [1,1,0],
+    blockS = np.array([[0,5,5],
+                       [5,5,0],
                        [0,0,0]])
 
-    blockT = np.array([[0,1,0],
-                       [1,1,1],
+    blockT = np.array([[0,6,0],
+                       [6,6,6],
                        [0,0,0]])
 
-    blockZ = np.array([[1,1,0],
-                       [0,1,1],
+    blockZ = np.array([[7,7,0],
+                       [0,7,7],
                        [0,0,0]])
 
 
@@ -238,7 +250,8 @@ class cTetris:
             count = 0
             # count the values together
             for x in self.playfield[line]:
-                count+=x
+                if x>=1:
+                    count+=1
 
             # a full line counts 10
             if count>=10:
@@ -282,14 +295,14 @@ class cTetris:
             for matx in range(len(mat[maty])):
                 #print(qx, qy, qx+mix, qy+miy)
                 # check if field is set
-                if mat[maty,matx]==1:
+                if mat[maty,matx]>=1:
                     #print("ON")
                     # check if bounds are ok
                     if qx+matx>=0 and qy+maty>=0 and self.playfield.size/10>qy+maty:
                         # check if x bound is ok
                         if self.playfield[qy+maty].size > qx+matx:
                             # check if playfield at this position is set
-                            if self.playfield[qy+maty, qx+matx]==1:
+                            if self.playfield[qy+maty, qx+matx]>=1:
                                 #print("PF SET")
                                 return False
                         else:
@@ -312,6 +325,7 @@ class cTetris:
     laydown = False
     def move(self,x,y):
         if(self.__checkForValidMove(self.actualBlockMat,self.actualBlockX+x,self.actualBlockY+y)):
+            # move the block
             self.actualBlockX+=x
             self.actualBlockY+=y
             self.laydown = False
@@ -397,7 +411,7 @@ class cTetris:
                 if self.actualBlockY+y<renderedfield.size/10:
                     if self.actualBlockX+x<renderedfield[self.actualBlockY+y].size:
                         if self.actualBlockMat[y,x]:    
-                            renderedfield[self.actualBlockY+y,self.actualBlockX+x]=1
+                            renderedfield[self.actualBlockY+y,self.actualBlockX+x]=self.actualBlockMat[y,x]
                         else:
                             renderedfield[self.actualBlockY+y,self.actualBlockX+x]=self.playfield[self.actualBlockY+y, self.actualBlockX+x]
         return renderedfield
@@ -417,23 +431,22 @@ class cTetris:
         return text
     
     # build the playfield as text   
-    def buildtextscreen(self, renderedfield):
+    def buildtextscreen(self, renderedfield, whichblocks):
         text=[]
         text.append("**********************")
         my=0
         mx=0
-        # build the playfield in text
         for y in renderedfield:
             txt="*"
             mx=0
             if my>=2:
                 for x in y:
-                    if(x==1):
+                    if(x==whichblocks and whichblocks!=0):
                         txt+="[]"
-                    elif(x==2):
-                        txt+="##" # Test Number / Field
-                    else:
+                    elif whichblocks==0 and x==0:
                         txt+=". "
+                    else:
+                        txt+="  "
                     #print(mx,my,self.playfield[my,mx], self.playfield.size, self.playfield[my].size)
                     mx+=1
                 txt+="*"
@@ -459,7 +472,8 @@ class cTetris:
 
 ############# AI CLASSES ##############################################################################################################
 
-# The AI Dataset class contains the data for one sample.
+# The AI Dataset class contains the data from our samples.
+# here it contains about 100 samples.
 class cAIDataset(Dataset):
     def __init__(self, playfields, keys, transform=None, target_transform=None):
         self.playfields = playfields
@@ -479,6 +493,33 @@ class cAIDataset(Dataset):
             key = self.target_transform(key)
         return playfield, key
     
+#**************************************************************************************************************************************
+# The cDeepQNetwork class is our neural network.
+"""
+@author: Viet Nguyen <nhviet1009@gmail.com>
+"""
+class cDeepQNetwork(nn.Module):
+    def __init__(self):
+        super(cDeepQNetwork, self).__init__()
+
+        self.conv1 = nn.Sequential(nn.Linear(4, 64), nn.ReLU(inplace=True))
+        self.conv2 = nn.Sequential(nn.Linear(64, 64), nn.ReLU(inplace=True))
+        self.conv3 = nn.Sequential(nn.Linear(64, 1))
+
+        self._create_weights()
+
+    def _create_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                nn.init.constant_(m.bias, 0)
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+
+        return x
 
 #**************************************************************************************************************************************
 
@@ -497,12 +538,31 @@ class cTetrAI:
     mode=0 # 0 Off 1 Play 2 Train
     samplecounter=0
 
+    # the device where the neural network is on.
+    aidevice="cpu"
+    aimodel=None
+
     # collect samples in this arrays
     sample_array_size=100
     sampleplayfields=[]
     samplekeys=[]
 
     spacepressed = False
+
+    # initialize the AI class.
+    def __init__(self):
+        print("Initializing AI class.")
+        # set device where the AI network runs on.
+        self.aidevice=(
+            "cuda"
+            if torch.cuda.is_available()
+            else "mps"
+            if torch.backends.mps.is_available()
+            else "cpu"
+        )
+        print(f"Using {self.aidevice} device.")
+        self.aimodel=cDeepQNetwork().to(self.aidevice)
+        print(self.aimodel)
 
     def reset(self):
         self.samplekeys=[]
@@ -550,15 +610,6 @@ class cTetrAI:
                     print("######## COLLECTING SAMPLES ########")
                 self.samplecounter+=1
                 # collect samples until limit is reached
-                ###########################
-                #    ,-------------__     #
-                #   {_   ___   ____--  *  #
-                #    /  /,_|   |/         #
-                #   /__/   |   |          #
-                #           | |           #
-                #           | |           #
-                #           |_|           # 
-                ####### COLLECT HERE ######
                 self.sampleplayfields.append(renderedfield)
                 self.samplekeys.append(lastplayerkey)
                 if lines>self.previouslinecount:
@@ -579,9 +630,12 @@ class cTetrAI:
 
                 # create a dataset.
                 ds = cAIDataset(self.sampleplayfields,self.samplekeys)
+                # create a loader from the dataset.
+                train_dataloader = DataLoader(ds, batch_size=64, shuffle=False)
 
                 print("######## AI TRAINING #########")
                 print("> Samples: "+format(ds.__len__()))
+                # reset all data
                 self.reset()
                 self.samplecounter=0
 
@@ -664,7 +718,7 @@ while True:
     #######################
 
     # create a text with the playfield, border and actual block
-    text = tet.buildtextscreen(rf)
+    blanktext=tet.buildtextscreen(rf,0)
     # create a text which shows the next block to come
     preview = tet.buildpreview(tet.nextBlockMat)
 
@@ -672,8 +726,15 @@ while True:
     dis.update_begin()
 
     # show the playfield on the screen
-    for line in range(len(text)):
-        dis.txt(text[line],True,0,dis.font_size*line)
+    for line in range(len(blanktext)):
+        dis.txt(blanktext[line], True, 0, dis.font_size*line)
+
+    # show text 7 times for each block type one color.
+    for q in range(0,8):
+        text = tet.buildtextscreen(rf,q)
+        for line in range(len(text)):
+            dis.txt(text[line],True,0,dis.font_size*line,q)
+
     # show the preview on the screen
     for pline in range(len(preview)):
         dis.txt(preview[pline],True,320, 50+dis.font_size*pline)

@@ -415,8 +415,8 @@ class cTetris:
         # copy the playfield
         renderedfield=np.copy(self.playfield)
         # draw the actual block matrix on the field
-	if renderActualBlock==False:
-		return renderedfield
+        if renderActualBlock==False:
+            return renderedfield
 
         for y in range(len(self.actualBlockMat)):
             for x in range(len(self.actualBlockMat[y])):
@@ -574,6 +574,10 @@ class cTetrAI:
     sample_array_size=100
     sampleplayfields=[]
     samplekeys=[]
+    sampleactualblocks=[]
+    samplenextblocks=[]
+    samplelinesscored=[]
+    samplexy=[]
 
     spacepressed = False
 
@@ -595,16 +599,20 @@ class cTetrAI:
     def reset(self):
         self.samplekeys=[]
         self.sampleplayfields=[]
+        self.sampleactualblocks=[]
+        self.samplenextblocks=[]
+        self.samplelinesscored=[]
+        self.samplexy=[]
  #       self.score = 0
  #       self.previousscore = 0
  #       self.deltascore = 0
  #       self.previouslinecount=0
 
     # process the AI stuff here
-    def processAI(self, somethingchanged, renderedfield, lines, points, gameover, lastplayerkey, nextblockmatrix, actualblockmatrix):
+    def processAI(self, somethingchanged, renderedfield, lines, points, gameover, lastplayerkey, nextblockmatrix, actualblockmatrix,actualblockx,actualblocky):
         nextsimulatedkey=0
 
-        # check if train, player play or predicting
+        # change with space if train 2, player play 0 or predicting 1
         keys=pg.key.get_pressed()
         if keys[pg.K_SPACE] and self.spacepressed==False:
             self.mode+=1
@@ -637,12 +645,20 @@ class cTetrAI:
                 if self.samplecounter==0:
                     print("######## COLLECTING SAMPLES ########")
                 self.samplecounter+=1
+                
                 # collect samples until limit is reached
                 self.sampleplayfields.append(renderedfield)
                 self.samplekeys.append(lastplayerkey)
+                self.sampleactualblocks.append(actualblockmatrix)
+                self.samplenextblocks.append(nextblockmatrix)
+                self.samplexy.append((actualblockx,actualblocky))
+                
                 if lines>self.previouslinecount:
                     print("line/s scored @ sample #"+format(self.samplecounter))
-            
+                    self.samplelinesscored.append(self.previouslinecount-lines)
+                else:
+                    self.samplelinesscored.append(0)
+                    
             # train with the above collected samples after 1 second
             if len(self.samplekeys)>=self.sample_array_size:
                 # train with the samples from above
@@ -725,6 +741,7 @@ while True:
     # it is a matrix with 0 and 1 values in size of the playfield.
     # also, the actual block is incorporated
     rf = tet.renderfield()
+    rfnoblock=tet.renderfield(False)
 
     # calculate the AI reaction for this turn.
     # where a turn is one change of the playfield
@@ -739,7 +756,7 @@ while True:
     # this method should return the next key to press. 1 left 2 right 3 rotate 4 speed up
 
     # process AI turn or whatever and push the simulated key to tetris
-    tet.simulatedkey=ai.processAI(tet.somethingchanged,rf, tet.linecount,tet.points, tet.gameover, tet.lastplayerkey,tet.nextBlockMat,tet.actualBlockMat)
+    tet.simulatedkey=ai.processAI(tet.somethingchanged,rfnoblock, tet.linecount,tet.points, tet.gameover, tet.lastplayerkey,tet.nextBlockMat,tet.actualBlockMat, tet.actualBlockX, tet.actualBlockY)
 
     ####################### 
     # build up the screen #

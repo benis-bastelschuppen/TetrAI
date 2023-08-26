@@ -139,6 +139,9 @@ class cTetris:
 
     # is the game over?
     gameover = False
+    
+    # the list with all blocks in it.
+    blockbag=[]
 
     # the blocks
     blockI = np.array([[0,0,0,0],
@@ -223,8 +226,14 @@ class cTetris:
         self.actualBlockY=0
         self.actualBlockX=4
         self.actualBlockMat = self.nextBlockMat
-
-        rnd=np.random.randint(0,len(self.blocks))
+        
+        if len(self.blockbag<=0):
+            self.blockbag=list(range(7))
+            random.shuffle(self.blockbag)
+         
+        rnd=self.blockbag.pop()
+        
+        #rnd=np.random.randint(0,len(self.blocks))
         #print("Next Block: ",rnd)
         if rnd==0: 
             self.nextBlockMat = self.__getBlockMat("I")
@@ -402,10 +411,13 @@ class cTetris:
                 self.gameover = True
 
     # render the playfield AND the actual block into a new matrix
-    def renderfield(self):
+    def renderfield(self, renderActualBlock=True):
         # copy the playfield
         renderedfield=np.copy(self.playfield)
         # draw the actual block matrix on the field
+	if renderActualBlock==False:
+		return renderedfield
+
         for y in range(len(self.actualBlockMat)):
             for x in range(len(self.actualBlockMat[y])):
                 if self.actualBlockY+y<renderedfield.size/10:
@@ -433,11 +445,20 @@ class cTetris:
     # build the playfield as text   
     def buildtextscreen(self, renderedfield, whichblocks):
         text=[]
-        text.append("**********************")
+        # only append stars if whichblocks == 0
+        if whichblocks==0:
+            text.append("**********************")
+        else:
+            text.append("                      ")
+            
         my=0
         mx=0
         for y in renderedfield:
-            txt="*"
+            if whichblocks==0:
+                txt="*"
+            else:
+                txt=" "
+                
             mx=0
             if my>=2:
                 for x in y:
@@ -449,10 +470,17 @@ class cTetris:
                         txt+="  "
                     #print(mx,my,self.playfield[my,mx], self.playfield.size, self.playfield[my].size)
                     mx+=1
-                txt+="*"
+                if whichblocks==0:
+                    txt+="*"
+                else:
+                    txt+=" "
                 text.append(txt)
-            my+=1  
-        text.append("**********************")
+            my+=1
+        # only append stars if whichblocks == 0
+        if whichblocks==0:
+            text.append("**********************")
+        else:
+            text.append("                      ")
         return text
     
     # reset the game

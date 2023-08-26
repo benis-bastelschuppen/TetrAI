@@ -2,6 +2,7 @@
 
 import pygame as pg
 import numpy as np
+import random
 
 import torch
 from torch import nn
@@ -14,15 +15,6 @@ from torch.utils.data import DataLoader
 ####### DISPLAY CLASS : be careful with the init #######################################################
 class cDisplay:
     background_color=(0,0,33)
-    font_color=[(33,150,33), # default color 0
-                (33,33,255), # color 1 blue
-                (255,33,33), # color 2 red
-                (33,255,33), # color 3 green
-                (255,150,33), # color 4 orange
-                (250,33,255), # color 5 purple
-                (255,255,0), # color 6 yellow
-                (33,255,255) # color 7 turkis
-                ]
     font_size=23
     
     screenx=500
@@ -84,10 +76,10 @@ class cDisplay:
 
     # draw a textline on posx, posy
     # with font color from 0 to 7 see above
-    def txt(self, textline, isbigFont=True,posx=0, posy=0, fontcolor=0):
-        renderfont=self.font2.render(textline,True,self.font_color[fontcolor])
+    def txt(self, textline, isbigFont=True,posx=0, posy=0, fontcolor=(33,150,33)):
+        renderfont=self.font2.render(textline,True,fontcolor)
         if isbigFont:
-            renderfont=self.font.render(textline,True,self.font_color[fontcolor])
+            renderfont=self.font.render(textline,True,fontcolor)
         #textrect=renderfont.get_rect()
         textrect = (posx, posy)
         self.screen.blit(renderfont, textrect)
@@ -139,7 +131,7 @@ class cTetris:
 
     # is the game over?
     gameover = False
-    
+        
     # the list with all blocks in it.
     blockbag=[]
 
@@ -227,7 +219,7 @@ class cTetris:
         self.actualBlockX=4
         self.actualBlockMat = self.nextBlockMat
         
-        if len(self.blockbag<=0):
+        if len(self.blockbag)<=0:
             self.blockbag=list(range(7))
             random.shuffle(self.blockbag)
          
@@ -351,9 +343,10 @@ class cTetris:
                     self.playfield=self.renderfield() # renderfield incorporates the actual block.
                     self.__getNextBlock()
                     self.__clearLines()
+                    self.somethingchanged=2
                 else:
                     self.laydown=True
-                self.somethingchanged=1
+                    self.somethingchanged=1
             #print("STOP @",self.actualBlockX, self.actualBlockY)
 
     # update the game, get key input, check stop watches, etc.
@@ -499,57 +492,68 @@ class cTetris:
 ############# END OF TETRIS CLASS #####################################################################################################
 
 ############# AI CLASSES ##############################################################################################################
-
-# The AI Dataset class contains the data from our samples.
-# here it contains about 100 samples.
-class cAIDataset(Dataset):
-    def __init__(self, playfields, keys, transform=None, target_transform=None):
-        self.playfields = playfields
-        self.keys = keys
-        self.transform = transform
-        self.target_transform = target_transform
-
-    def __len__(self):
-        return len(self.keys)
-    
-    def __getitem__(self, idx):
-        playfield = self.playfields[idx]
-        key = self.keys[idx]
-        if self.transform:
-            playfield=self.transform(playfield)
-        if self.target_transform:
-            key = self.target_transform(key)
-        return playfield, key
     
 #**************************************************************************************************************************************
 # The cDeepQNetwork class is our neural network.
 """
 @author: Viet Nguyen <nhviet1009@gmail.com>
 """
-class cDeepQNetwork(nn.Module):
-    def __init__(self):
-        super(cDeepQNetwork, self).__init__()
-
-        self.conv1 = nn.Sequential(nn.Linear(4, 64), nn.ReLU(inplace=True))
-        self.conv2 = nn.Sequential(nn.Linear(64, 64), nn.ReLU(inplace=True))
-        self.conv3 = nn.Sequential(nn.Linear(64, 1))
-
-        self._create_weights()
-
-    def _create_weights(self):
-        for m in self.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.xavier_uniform_(m.weight)
-                nn.init.constant_(m.bias, 0)
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.conv2(x)
-        x = self.conv3(x)
-
-        return x
+#class cDeepQNetwork(nn.Module):
+#    def __init__(self):
+#        super(cDeepQNetwork, self).__init__()
+#
+#        self.conv1 = nn.Sequential(nn.Linear(4, 64), nn.ReLU(inplace=True))
+#        self.conv2 = nn.Sequential(nn.Linear(64, 64), nn.ReLU(inplace=True))
+#        self.conv3 = nn.Sequential(nn.Linear(64, 1))
+#
+#        self._create_weights()
+#
+#    def _create_weights(self):
+#        for m in self.modules():
+#            if isinstance(m, nn.Linear):
+#                nn.init.xavier_uniform_(m.weight)
+#                nn.init.constant_(m.bias, 0)
+#
+#    def forward(self, x):
+#        x = self.conv1(x)
+#        x = self.conv2(x)
+#        x = self.conv3(x)
+#
+#        return x
 
 #**************************************************************************************************************************************
+# The sample class collects one sample together.
+# A sample has: One playfield, several keystrokes from player, 
+# several positions from block until next playfield state change
+# several actual block matrices
+# one next block matrix
+class cAISample():
+    # single values
+    playfield = []
+    linesscored=0
+    holes=0
+    nextmatrix=[]
+    
+    # lists
+    playerkeys=[]
+    actualmatrices=[]
+    actualxys=[]
+
+    # init the sample with the playfield and the nextblockmatrix
+    def __init__(self, playfield, linesscored, actualholes,nextblockmatrix):
+        self.playfield=playfield
+        self.nextmatrix=nextblockmatrix
+        self.linesscored=linesscored
+        self.holes=actualholes
+        self.playerkeys=[]
+        self.actualmatrices=[]
+        self.actualxys=[]
+
+    # call this on every change of the sample
+    def append(self,playerkey,actualmatrix,actualx,actualy):
+        self.playerkeys.append(playerkey)
+        self.actualmatrices.append(actualmatrix)
+        self.actualxys.append((actualx,actualy))
 
 # The AI class processes all the input from Tetris and gives a key-to-press as output,
 # or is in learn mode. Or is Off.
@@ -566,47 +570,55 @@ class cTetrAI:
     mode=0 # 0 Off 1 Play 2 Train
     samplecounter=0
 
+    # how many holes are in the playfield, for rendering on the screen.
+    actualholes=0
+
     # the device where the neural network is on.
     aidevice="cpu"
     aimodel=None
 
-    # collect samples in this arrays
+    # max size of the sample array
     sample_array_size=100
-    sampleplayfields=[]
-    samplekeys=[]
-    sampleactualblocks=[]
-    samplenextblocks=[]
-    samplelinesscored=[]
-    samplexy=[]
 
     spacepressed = False
+
+    #the new sample collector
+    sample=None
+    samples=[]
 
     # initialize the AI class.
     def __init__(self):
         print("Initializing AI class.")
         # set device where the AI network runs on.
-        self.aidevice=(
-            "cuda"
-            if torch.cuda.is_available()
-            else "mps"
-            if torch.backends.mps.is_available()
-            else "cpu"
-        )
-        print(f"Using {self.aidevice} device.")
-        self.aimodel=cDeepQNetwork().to(self.aidevice)
-        print(self.aimodel)
+        #self.aidevice=(
+        #    "cuda"
+        #    if torch.cuda.is_available()
+        #    else "mps"
+        #    if torch.backends.mps.is_available()
+        #    else "cpu"
+        #)
+        #print(f"Using {self.aidevice} device.")
+        #self.aimodel=cDeepQNetwork().to(self.aidevice)
+        #print(self.aimodel)
 
     def reset(self):
-        self.samplekeys=[]
-        self.sampleplayfields=[]
-        self.sampleactualblocks=[]
-        self.samplenextblocks=[]
-        self.samplelinesscored=[]
-        self.samplexy=[]
- #       self.score = 0
- #       self.previousscore = 0
- #       self.deltascore = 0
- #       self.previouslinecount=0
+        self.samples=[]
+        self.actualholes=0
+
+    # count all empty blocks which 
+    # are occupied from above.
+    def __get_holes(self, binfield):
+        holes=0
+        if len(binfield)>0:
+            for x in range(len(binfield[0])):
+                closed=False
+                for y in range(len(binfield)):
+                    if binfield[y][x]>=1:
+                        closed=True
+                    else:
+                        if closed==True:
+                            holes+=1
+        return holes
 
     # process the AI stuff here
     def processAI(self, somethingchanged, renderedfield, lines, points, gameover, lastplayerkey, nextblockmatrix, actualblockmatrix,actualblockx,actualblocky):
@@ -638,29 +650,37 @@ class cTetrAI:
         # lastplayerkey uses the same values. 
         # So the AI can learn from a human beeing, maybe.
         # but it gets punished a little for using human help (in the countscore function) ;)
-        
+
+        # get holes for this frame
+        self.actualholes=self.__get_holes(renderedfield)
+
         # mode 2 is training mode
         if self.mode==2:
-            if somethingchanged:
+            if somethingchanged==2 or self.sample==None:
                 if self.samplecounter==0:
                     print("######## COLLECTING SAMPLES ########")
+                txt="> New Sample #"+format(self.samplecounter)
+                if self.sample!=None:
+                    txt+=", previous statecount:"+format(len(self.sample.playerkeys))
+                    self.samples.append(self.sample)
+                print(txt)
                 self.samplecounter+=1
-                
-                # collect samples until limit is reached
-                self.sampleplayfields.append(renderedfield)
-                self.samplekeys.append(lastplayerkey)
-                self.sampleactualblocks.append(actualblockmatrix)
-                self.samplenextblocks.append(nextblockmatrix)
-                self.samplexy.append((actualblockx,actualblocky))
-                
+                self.sample=None
+                # record if there were lines scored.
                 if lines>self.previouslinecount:
                     print("line/s scored @ sample #"+format(self.samplecounter))
-                    self.samplelinesscored.append(self.previouslinecount-lines)
+                    self.sample=cAISample(renderedfield,self.previouslinecount-lines,self.actualholes,nextblockmatrix)
                 else:
-                    self.samplelinesscored.append(0)
+                    print("No lines scored.")
+                    self.sample=cAISample(renderedfield,0,self.actualholes,nextblockmatrix)
+
+            if somethingchanged:
+                # add actual values to the sample
+                self.sample.append(lastplayerkey,actualblockmatrix,actualblockx,actualblocky)
+      
                     
             # train with the above collected samples after 1 second
-            if len(self.samplekeys)>=self.sample_array_size:
+            if len(self.samples)>=self.sample_array_size:
                 # train with the samples from above
                 ###########################
                 #    ,-------------__     #
@@ -673,17 +693,26 @@ class cTetrAI:
                 ######## TRAIN HERE #######
 
                 # create a dataset.
-                ds = cAIDataset(self.sampleplayfields,self.samplekeys)
+                #ds = cAIDataset(self.sampleplayfields,self.samplekeys)
                 # create a loader from the dataset.
-                train_dataloader = DataLoader(ds, batch_size=64, shuffle=False)
+                #train_dataloader = DataLoader(ds, batch_size=64, shuffle=False)
 
                 print("######## AI TRAINING #########")
-                print("> Samples: "+format(ds.__len__()))
+                #print("> Samples: "+format(ds.__len__()))
                 # reset all data
                 self.reset()
                 self.samplecounter=0
 
         elif self.mode==1: # if it is not training, it is playing
+                ###########################
+                #    ,-------------__     #
+                #   {_   ___   ____--  *  #
+                #    /  /,_|   |/         #
+                #   /__/   |   |          #
+                #           | |           #
+                #           | |           #
+                #           |_|           # 
+                ######## PLAY HERE #######
             nextsimulatedkey = np.random.randint(0,5) # 1 left 2 right 3 rotate 4 speed up
         else: # mode 0 = leave the player playing
             pass
@@ -732,6 +761,17 @@ dis=cDisplay() # graphics and time adapter
 tet=cTetris()  # the tetris game itself
 ai = cTetrAI() # the AI playing tetris
 
+# block colours
+block_color=[(33,150,33), # default color 0
+            (33,255,255), # color 1 turkis
+            (255,33,33), # color 2 red
+            (33,255,33), # color 3 green
+            (255,150,33), # color 4 orange
+            (150,33,255), # color 5 purple
+            (255,255,0), # color 6 yellow
+            (33,33,255) # color 7 blue
+            ]
+
 while True:
 
     # update tetris
@@ -771,6 +811,8 @@ while True:
     dis.update_begin()
 
     # show the playfield on the screen
+    # show the points (empty space) and 
+    # border which are in blanktext
     for line in range(len(blanktext)):
         dis.txt(blanktext[line], True, 0, dis.font_size*line)
 
@@ -778,7 +820,7 @@ while True:
     for q in range(0,8):
         text = tet.buildtextscreen(rf,q)
         for line in range(len(text)):
-            dis.txt(text[line],True,0,dis.font_size*line,q)
+            dis.txt(text[line],True,0,dis.font_size*line,block_color[q])
 
     # show the preview on the screen
     for pline in range(len(preview)):
@@ -849,6 +891,9 @@ while True:
 
     text="Sample #"+format(ai.samplecounter)+"/"+format(ai.sample_array_size)
     dis.txt(text,False,320,335)
+
+    text="Holes: "+format(ai.actualholes)
+    dis.txt(text,False,320,350)
 
     text="FPS: "+format(dis.fps)
     dis.txt(text,False, 320, 390)
